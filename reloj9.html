@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Cronómetro Preciso con Sonido - 00:00:00</title>
+  <style>
+    body {
+      font-family: 'Courier New', monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      transition: background-color 1s ease;
+      background-color: #f0f0f0;
+      margin: 0;
+      padding: 20px;
+    }
+
+    .contenedor {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+      width: 100%;
+      max-width: 600px;
+    }
+
+    .grupo-controles {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 15px;
+      margin-bottom: 20px;
+      justify-content: center;
+      align-items: flex-end;
+      background-color: #e9e9e9;
+      padding: 15px;
+      border-radius: 8px;
+      width: 100%;
+    }
+
+    .control {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+    }
+
+    input, button {
+      font-size: 16px;
+      padding: 8px;
+      text-align: center;
+    }
+
+    input[type="number"] {
+      width: 70px;
+    }
+
+    input[type="color"] {
+      width: 60px;
+      height: 40px;
+      padding: 2px;
+    }
+
+    #reloj {
+      font-size: 80px;
+      color: #333;
+      margin: 10px 0;
+      text-align: center;
+      min-height: 100px;
+    }
+
+    label {
+      font-size: 14px;
+      font-weight: bold;
+    }
+
+    #sonidoControles {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      margin-top: 10px;
+      background-color: #e0e0e0;
+      padding: 10px;
+      border-radius: 8px;
+      width: 100%;
+    }
+
+    #volumen {
+      width: 200px;
+    }
+
+    .info-memoria {
+      font-size: 12px;
+      color: #666;
+      margin-top: 20px;
+      text-align: center;
+    }
+
+    @media (max-width: 600px) {
+      #reloj {
+        font-size: 60px;
+      }
+      
+      .grupo-controles {
+        flex-direction: column;
+        align-items: center;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="contenedor">
+    <h1>Cronómetro Preciso</h1>
+    
+    <div class="grupo-controles">
+      <div class="control">
+        <label for="horas">Horas</label>
+        <input type="number" id="horas" placeholder="HH" min="0" value="0">
+      </div>
+      
+      <div class="control">
+        <label for="minutos">Minutos</label>
+        <input type="number" id="minutos" placeholder="MM" min="0" max="59" value="1">
+      </div>
+      
+      <div class="control">
+        <label for="segundos">Segundos</label>
+        <input type="number" id="segundos" placeholder="SS" min="0" max="59" value="0">
+      </div>
+      
+      <div class="control">
+        <label for="repeticiones">Repeticiones</label>
+        <input type="number" id="repeticiones" placeholder="Rep" min="1" value="1">
+      </div>
+      
+      <div class="control">
+        <label for="colorFinal">Color final</label>
+        <input type="color" id="colorFinal" value="#ffdede">
+      </div>
+      
+      <button onclick="iniciarCronometro()" style="align-self: flex-end;">Iniciar</button>
+    </div>
+
+    <div id="reloj">--:--:--</div>
+
+    <audio id="alarma" src="alarma.mp3" preload="auto"></audio>
+
+    <div id="sonidoControles">
+      <button onclick="detenerSonido()">🔇 Detener sonido</button>
+      <div class="control">
+        <label for="volumen">Volumen</label>
+        <input type="range" id="volumen" min="0" max="1" step="0.01" value="1">
+      </div>
+    </div>
+
+    <div class="info-memoria">
+      <p>Uso de memoria estimado: <span id="memoria">--</span> MB</p>
+      <p>El cronómetro seguirá funcionando en esta pestaña mientras esté abierta</p>
+    </div>
+  </div>
+
+  <script>
+    let intervalo;
+    let finDelTiempo = null;
+    let alarmaReproducida = false;
+    let repeticionesRestantes = 0;
+    let ultimaConfiguracion = {};
+    let memoriaAnterior = 0;
+
+    const audio = document.getElementById("alarma");
+    const sonidoControles = document.getElementById("sonidoControles");
+    const volumenSlider = document.getElementById("volumen");
+    const memoriaDisplay = document.getElementById("memoria");
+
+    // Intentar obtener información de memoria (limitado por el navegador)
+    function actualizarMemoria() {
+      if (performance && performance.memory) {
+        const memoriaMB = (performance.memory.usedJSHeapSize / (1024 * 1024)).toFixed(1);
+        // Solo actualizar si ha cambiado significativamente para evitar actualizaciones frecuentes
+        if (Math.abs(memoriaMB - memoriaAnterior) >= 0.1) {
+          memoriaDisplay.textContent = memoriaMB;
+          memoriaAnterior = memoriaMB;
+        }
+      }
+    }
+
+    // Actualizar memoria cada 2 segundos
+    setInterval(actualizarMemoria, 2000);
+
+    volumenSlider.addEventListener("input", () => {
+      audio.volume = parseFloat(volumenSlider.value);
+    });
+
+    function detenerSonido() {
+      audio.pause();
+      audio.currentTime = 0;
+      sonidoControles.style.display = "none";
+    }
+
+    // Detectar cuando termina el sonido para reiniciar si hay repeticiones
+    audio.addEventListener("ended", () => {
+      if (repeticionesRestantes > 0) {
+        repeticionesRestantes--;
+        iniciarCronometroDesdeConfiguracion();
+      }
+    });
+
+    function iniciarCronometro() {
+      clearInterval(intervalo);
+      alarmaReproducida = false;
+      sonidoControles.style.display = "none";
+      document.body.style.backgroundColor = "#f0f0f0";
+      detenerSonido();
+
+      const h = parseInt(document.getElementById("horas").value) || 0;
+      const m = parseInt(document.getElementById("minutos").value) || 0;
+      const s = parseInt(document.getElementById("segundos").value) || 0;
+      const colorFinal = document.getElementById("colorFinal").value;
+      const repeticiones = parseInt(document.getElementById("repeticiones").value) || 1;
+
+      const totalSegundos = h * 3600 + m * 60 + s;
+      if (totalSegundos <= 0) {
+        alert("Ingresa un tiempo mayor a cero.");
+        return;
+      }
+
+      // Guardar configuración para repeticiones futuras
+      ultimaConfiguracion = { h, m, s, colorFinal };
+      repeticionesRestantes = repeticiones - 1; // Ya se ejecuta 1 vez ahora
+
+      iniciarCronometroDesdeConfiguracion();
+    }
+
+    function iniciarCronometroDesdeConfiguracion() {
+      clearInterval(intervalo);
+      alarmaReproducida = false;
+      document.body.style.backgroundColor = "#f0f0f0";
+      detenerSonido();
+
+      const { h, m, s, colorFinal } = ultimaConfiguracion;
+      const totalSegundos = h * 3600 + m * 60 + s;
+      const ahora = new Date();
+      finDelTiempo = new Date(ahora.getTime() + totalSegundos * 1000);
+
+      function actualizarReloj() {
+        const ahora = new Date();
+        let diff = Math.floor((finDelTiempo - ahora) / 1000);
+        if (diff < 0) diff = 0;
+
+        const horas = Math.floor(diff / 3600);
+        const minutos = Math.floor((diff % 3600) / 60);
+        const segundos = diff % 60;
+
+        const tiempoFormateado = 
+          `${horas.toString().padStart(2, '0')}:${minutos.toString().padStart(2, '0')}:${segundos.toString().padStart(2, '0')}`;
+        
+        document.getElementById("reloj").textContent = tiempoFormateado;
+        document.title = `Cronómetro - ${tiempoFormateado}`;
+
+        if (diff === 0 && !alarmaReproducida) {
+          alarmaReproducida = true;
+          document.body.style.backgroundColor = colorFinal;
+          audio.volume = parseFloat(volumenSlider.value);
+          audio.play();
+          sonidoControles.style.display = "flex";
+          clearInterval(intervalo);
+        }
+      }
+
+      actualizarReloj();
+      intervalo = setInterval(actualizarReloj, 200);
+    }
+  </script>
+</body>
+</html>
